@@ -1,0 +1,293 @@
+{
+  "cells": [
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "f9c28535-8241-f43c-b363-9adcf922c36c"
+      },
+      "outputs": [],
+      "source": [
+        "# This R environment comes with all of CRAN preinstalled, as well as many other helpful packages\n",
+        "# The environment is defined by the kaggle/rstats docker image: https://github.com/kaggle/docker-rstats\n",
+        "# For example, here's several helpful packages to load in \n",
+        "\n",
+        "library(ggplot2) # Data visualization\n",
+        "library(readr) # CSV file I/O, e.g. the read_csv function\n",
+        "library(ggplot2)\n",
+        "library(plyr)\n",
+        "library(xtable)\n",
+        "library(reshape2)\n",
+        "library(stringr)\n",
+        "\n",
+        "# Input data files are available in the \"../input/\" directory.\n",
+        "# For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory\n",
+        "\n",
+        "system(\"ls ../input\")\n",
+        "\n",
+        "# Any results you write to the current directory are saved as output."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "a02ea0f4-d153-6aad-5107-ebf3c2ab3767"
+      },
+      "outputs": [],
+      "source": [
+        "myData <- read.csv(\"../input/menu.csv\", sep = \",\", stringsAsFactors=FALSE)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "_cell_guid": "2ba1ada3-fe34-f1a8-2759-468f55a00ece"
+      },
+      "source": [
+        "First, let us get an overview about the data."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "ac0331e0-96f9-7bdf-eddb-3c45f6009e41"
+      },
+      "outputs": [],
+      "source": [
+        "plot1 <- ggplot(myData, aes(x=Category, y=Calories))+\n",
+        "  geom_boxplot()+\n",
+        "  theme(axis.text.x = element_text(angle = 45, hjust = 1))+\n",
+        "  ylab(\"energy content [kcal]\")+xlab(\"Food Category\")\n",
+        "plot1"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "_cell_guid": "53b3a900-d3e4-8a78-55f8-33585f4e4f35"
+      },
+      "source": [
+        "Interestingly, the main components of a meal, be it the breakfast or the various burgers, have a mean energy content of about 500 kcal. Similarly, sides, desserts and salads (and the coffee mix drinks - which some would also count as desserts...) are around 250 kcal. So a typical meal consisting of an entree, a side, and a dessert as well as a beverage will top out around 1000 to 1200 kcals\n",
+        "\n",
+        "Let's have a look how the calories are divided between the three main components - fat, carbs, and protein.However, only the information for calories from fat are given in the data. We use this information here to calculate the rest (https://en.wikipedia.org/wiki/Food_energy) - likely the calculations by McDonalds are based on similar values. \n",
+        "\n",
+        "But let's have a look how close we get with our guess.For this, plotting calculated vs stated calories should result in a straight line starting at 0,0. To make sure, we can check using a linear regression. \n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "ceccca6e-c28b-1b95-c089-ed7af0869a15"
+      },
+      "outputs": [],
+      "source": [
+        "myData2 <- ddply(myData, c(\"Category\", \"Item\", \"Calories\", \"Calories.from.Fat\"), summarize, \n",
+        "                 myFatCals = Total.Fat*9, \n",
+        "                 myCarbCals = Carbohydrates*4,\n",
+        "                 myProteinCal = Protein*4,\n",
+        "                 myTotalCal = myFatCals + myCarbCals+ myProteinCal,\n",
+        "                 myPercentFatCal = myFatCals/myTotalCal*100,  myPercentCarbCal = myCarbCals/myTotalCal*100,  myPercentProteinCal = myProteinCal/myTotalCal*100)\n",
+        "\n",
+        "fit <- lm(myTotalCal ~ Calories, data=myData2)\n",
+        "summary(fit)\n",
+        "plot2 <- ggplot(myData2, aes(x=Calories, y=myTotalCal))+\n",
+        "  geom_point()+\n",
+        "  stat_smooth(method = \"lm\", col = \"red\")+\n",
+        "  ylab(\"calculated energy content [kcals]\")+xlab(\"stated energy content [kcals]\")\n",
+        "plot2"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "_cell_guid": "b27004cb-bac7-9cc0-b7e5-65e2da70b803"
+      },
+      "source": [
+        "It looks like our calculated energy content is quite close to the stated energy content (Adjusted R-squared:  0.9994). Now we can check how fat, carbs, and protein contribute to the energy content of the food types."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "b8a7eb98-a9d4-dc6a-1a47-2c6829c2e815"
+      },
+      "outputs": [],
+      "source": [
+        "myData3 <- myData2\n",
+        "myData3 <- subset(myData3, Calories != 0)\n",
+        "myData3 <- subset(myData3, select = c(\"Category\",\"Item\", \"myPercentFatCal\", \"myPercentProteinCal\", \"myPercentCarbCal\"))\n",
+        "\n",
+        "myData3$Item <- factor(myData3$Item, levels=myData3$Item[order(myData3$myPercentFatCal,myData3$myPercentProteinCal,myData3$myPercentCarbCal)], ordered=TRUE)\n",
+        "\n",
+        "myData3 <- melt(myData3)\n",
+        "\n",
+        "plot3 <- ggplot(myData3, aes(x=Item, y=value, fill = variable))+\n",
+        "  theme_bw()+\n",
+        "  geom_bar(stat = \"identity\",width=1)+\n",
+        "  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())+\n",
+        "  xlab(\"Menu item\")+ ylab(\"energy content [%]\")+\n",
+        "  scale_fill_manual(values=c(\"#999999\", \"#E69F00\", \"#56B4E9\"), \n",
+        "                       name=\"Food stuff\",\n",
+        "                       breaks=c(\"myPercentFatCal\", \"myPercentProteinCal\", \"myPercentCarbCal\"),\n",
+        "                       labels=c(\"Fat\", \"Protein\", \"Carbs\"))\n",
+        "plot3"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "ffdc3992-90d7-a97c-2e5d-691d2762b638"
+      },
+      "outputs": [],
+      "source": [
+        "From this plot one might conclude that food mainly contains fat and carbs.\n",
+        "\n",
+        "A wise man once said that good food engineering aims for selling water in the most expensive way possible. Let's have a look at how much water is in each food type except the beverages (everything that has grams in the serving size data point)."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "a3b6583c-ee6d-0ca7-c79c-fdc6190cdd4e"
+      },
+      "outputs": [],
+      "source": [
+        "myData4 <- myData\n",
+        "myData4 <- subset(myData4, select = c(\"Category\",\"Item\", \"Serving.Size\", \"Total.Fat\", \"Carbohydrates\", \"Protein\", \"Dietary.Fiber\"))\n",
+        "\n",
+        "myData4$Serving.Size <- gsub(\"\\\\d*.\\\\d* oz \\\\((\\\\d* )g\\\\)\", \"\\\\1\", myData4$Serving.Size, perl = TRUE)\n",
+        "\n",
+        "myData4$Serving.Size <- as.numeric(myData4$Serving.Size)\n",
+        "myData4 <- subset(myData4, !is.na(Serving.Size))\n",
+        "myData4 <- ddply(myData4, c(\"Category\",\"Item\", \"Serving.Size\", \"Total.Fat\", \"Carbohydrates\", \"Protein\", \"Dietary.Fiber\"), summarize, water = (Serving.Size- Total.Fat - Carbohydrates - Protein - Dietary.Fiber)/Serving.Size*100)\n",
+        "\n",
+        "myData$Category <- as.factor(myData$Category)\n",
+        "flevel <- levels(myData$Category)\n",
+        "\n",
+        "plot4 <- ggplot(myData4, aes(x=Category, y=water, color=Category))+\n",
+        "  geom_point()+\n",
+        "  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())+\n",
+        "  xlab(\"category\")+ ylab(\"water content [%]\")\n",
+        "plot4"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "_cell_guid": "e4ed1e96-47ea-10a3-f269-063bcaccbb04"
+      },
+      "source": [
+        "It seems Beef&Pork is a good value in terms of non-water content. For the Chicken & Fish category, it might be interesting to separate them and see whether the fish items are more watery than the chicken items :-). Salad seems to contain lots of water, way more than Smoothies & Shakes which one might not have guessed given the more liquid nature of the later compared to the former."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "9b8e5530-9f69-d3ea-e63d-6e5bf322e28f"
+      },
+      "outputs": [],
+      "source": [
+        "plot5 <- ggplot(myData4, aes(x=(9*Total.Fat+4*Carbohydrates+4*Protein)/Serving.Size,y=water, color=Category))+\n",
+        "  geom_point()+\n",
+        "  xlab(\"specific calory content [kcal/g]\")+ylab(\"water [%]\")+\n",
+        "  stat_smooth(method = \"lm\", col = \"red\")\n",
+        "plot5"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "44fc8500-488f-c991-e58e-84ee77cced87"
+      },
+      "outputs": [],
+      "source": [
+        "However, a high water content might be a good thing. Plotting calories per gram of food against water yields the insight that water contains no calories and is good when on a diet.BTW - the outlier with the highest energy content are cinnamon melts from the breakfast category.\n",
+        "\n",
+        "\n",
+        "Not all nutrition comes from fat, carbs and protein. One or the other vitamin and mineral now and then is also a good thing. Let's see whether we can also get enough of these. Let's eat one year from this menu and see how often we hit a nutrious meal."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "_cell_guid": "099ea3ac-de33-de34-4128-229fb296f58c"
+      },
+      "outputs": [],
+      "source": [
+        "library(dplyr)\n",
+        "myBreakfast <- subset(myData, Category == \"Breakfast\")\n",
+        "myLunchDinner <- subset(myData, Category == \"Beef & Pork\" | Category == \"Chicken & Fish\")\n",
+        "mySides <- subset(myData, Category == \"Snacks & Sides\")\n",
+        "mySalads <- subset(myData, Category == \"Salads\")\n",
+        "myBeverages <- subset(myData, Category == \"Beverages\")\n",
+        "myCoffees <- subset(myData, Category == \"Coffee & Tea\")\n",
+        "myDesserts <- subset(myData, Category == \"Desserts\" | Category == \"Smoothies & Shakes\")\n",
+        "\n",
+        "myYear <- sample_n(myData,1)\n",
+        "myYear$day <- 1\n",
+        "myYear <- NULL\n",
+        "\n",
+        "for (i in 1:365){\n",
+        "  #pick a breakfast\n",
+        "  mySample <- sample_n(myBreakfast,1)\n",
+        "  mySample <- rbind(mySample, sample_n(myLunchDinner,2))\n",
+        "  mySample <- rbind(mySample, sample_n(mySides,2))\n",
+        "  mySample <- rbind(mySample, sample_n(myBeverages,2))\n",
+        "  mySample <- rbind(mySample, sample_n(myDesserts,1))\n",
+        "  mySample <- rbind(mySample, sample_n(myCoffees,2))\n",
+        "  mySample$day <- c(i,i,i,i,i,i,i,i,i,i)\n",
+        "  myYear <- rbind(myYear, mySample)\n",
+        "  mySample <- NULL\n",
+        "  \n",
+        "  \n",
+        "}\n",
+        "\n",
+        "myYearAggregated <- ddply(myYear, c(\"day\"), summarize, Iron = sum(Iron....Daily.Value.), VitaminA = sum(Vitamin.A....Daily.Value.), VitaminC = sum(Vitamin.C....Daily.Value.), Calcium = sum(Calcium....Daily.Value.), Fibers = sum(Dietary.Fiber....Daily.Value.))\n",
+        "\n",
+        "myMeltedYear <- melt(myYearAggregated, id.vars = \"day\")\n",
+        "\n",
+        "plot6 <- ggplot(myMeltedYear, aes(x=day, y=value, colour = value > 100))+\n",
+        "  facet_grid(. ~ variable)+\n",
+        "  geom_point()\n",
+        "plot6"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "_cell_guid": "209a789f-cbec-ec71-55da-11d7bb481191"
+      },
+      "source": [
+        "It looks like our hypothetical customer was pretty well covered for his vitamins (A and C) anc calcium when randomly picking his/her meals for the day. However, his/her iron and fibers needs are not so well covered."
+      ]
+    }
+  ],
+  "metadata": {
+    "_change_revision": 0,
+    "_is_fork": false,
+    "kernelspec": {
+      "display_name": "R",
+      "language": "R",
+      "name": "ir"
+    },
+    "language_info": {
+      "codemirror_mode": "r",
+      "file_extension": ".r",
+      "mimetype": "text/x-r-source",
+      "name": "R",
+      "pygments_lexer": "r",
+      "version": "3.3.3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
