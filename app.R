@@ -7,7 +7,7 @@
 #    http://shiny.rstudio.com/
 #
 
-library(shinya)
+library(shiny)
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
